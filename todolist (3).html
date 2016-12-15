@@ -1,0 +1,383 @@
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>Todo List</title>
+		<style>
+			*{
+				margin:0;
+				padding:0;
+				font-family:Microsoft Yahei;
+				line-height:1;
+			}
+			ul{
+				list-style:none;
+			}
+			.todoList{
+				margin:100px auto 0;
+				padding:10px;
+				width:580px;
+				border:1px solid rgb(204, 204, 204);
+			}
+			.todoList .inputBar{
+				padding:10px;
+				height:40px;
+				border:1px solid rgb(204, 204, 204);
+			}
+			.todoList .inputBar input{
+				vertical-align:middle;
+			}
+			.todoList .inputBar input[type="checkbox"]{
+				width:40px;
+				height:40px;
+			}
+			.todoList .inputBar .userInput{
+				margin-left:10px;
+				padding:0 10px;
+				box-sizing:content-box;
+				width:480px;
+				height:36px;
+				border:1px solid rgb(204, 204, 204);
+				font-size:20px;
+				line-height:36px;
+				letter-spacing:1px;
+				outline:none;
+				transition:border-color .25s;
+			}
+			.todoList .inputBar .userInput:focus{
+				border-color:rgb(102, 102, 102);
+			}
+			.todoList .tasks li{
+				padding:5px;
+				height:30px;
+				border-bottom:1px solid rgb(204, 204, 204);
+			}
+			.todoList .tasks li input, .todoList .tasks li p{
+				float:left;
+			}
+			.todoList .tasks li input{
+				margin:3px;
+				width:24px;
+				height:24px;
+			}
+			.todoList .tasks li p{
+				margin-left:10px;
+				width:480px;
+				font-size:20px;
+				line-height:30px;
+				color:rgb(51, 51, 51);
+			}
+			.todoList .tasks li p.checked{
+				text-decoration:line-through;
+				color:rgb(153, 153, 153);
+			}
+			.todoList .tasks li a{
+				float:right;
+				font-size:30px;
+				color:rgb(102, 102, 102);
+				cursor:pointer;
+			}
+			.todoList .statusBar{
+				margin-top:10px;
+				overflow:hidden;
+			}
+			.todoList .statusBar span{
+				float:left;
+				margin-right:70px;
+				font-size:14px;
+			}
+			.todoList .statusBar span, .todoList .statusBar b{
+				line-height:30px;
+			}
+			.todoList .statusBar a{
+				float:left;
+				margin-left:10px;
+				padding:8px 14px;
+				border:1px solid rgb(204, 204, 204);
+				font-size:12px;
+				cursor:pointer;
+				transition:color, border-color .25s;
+			}
+			.todoList .statusBar a:hover, .todoList .statusBar a.current{
+				border-color:red;
+				color:red;
+			}
+			.todoList .statusBar b{
+				float:right;
+				font-size:14px;
+				cursor:pointer;
+				transition:color .15s;
+			}
+			.todoList .statusBar b:hover{
+				color:red;
+			}
+		</style>
+	</head>
+	<body>
+		<script>
+			//数组forEach方法补丁
+			Array.prototype.forEach = [].forEach || function(callback){
+				var a = 0,
+					len = this.length;
+				while(a < len){
+					callback(this[a], a++, this);
+				}
+			};
+			//数组map方法补丁
+			Array.prototype.map = function(callback){
+				var a = 0,
+					len = this.length,
+					result = [];
+				while(a < len){
+					result.push(callback(this[a], a++, this));
+				}
+				return result;
+			};
+			//数组filter方法补丁
+			Array.prototype.filter = function(callback){
+				var a = -1,
+					len = this.length,
+					result = [];
+				while(++a < len){
+					callback(this[a], a, this) && result.push(this[a]);
+				}
+				return result;
+			};
+			;(function(){
+				function dc(tagName){
+					return document.createElement(tagName);
+				}
+				// TodoList对象
+				var TodoList = {
+					// 输入栏
+					InputBar : function(oTasks){
+						var element = dc("div"),
+							checkbox = dc("input"),
+							userInput = dc("input");
+						// 输入框失去焦点并且其value、以及checkbox值发生改变时才会触发onchange事件
+						checkbox.onchange = function(){
+							oTasks.checkAll(this.checked);
+						};
+						// 设置输入框属性
+						userInput.className = "userInput";
+						userInput.onkeyup = function(e){
+							/^\S+$/.test(this.value) && (e || event).keyCode === 13 && oTasks.appendTask(this.value/*输入框的值*/, function(){
+								e.target.value = "";
+							}/*保证任务列表添加好了一个新任务后再执行此清空方法*/);
+						};
+						checkbox.type = "checkbox";
+						// 设置输入栏属性
+						element.className = "inputBar";
+						element.appendChild(checkbox);
+						element.appendChild(userInput);
+						this.element = element;
+					},
+					// 任务列表
+					Tasks : function(){
+						var element = dc("ul");
+						element.className = "tasks";
+						this.element = element;
+						this.arrTasks = [];
+						// 当前的状态栏的选中状态
+						this.status = 0;
+						// 任务类
+						function Task(parentObject, key, text){
+							// 创建单条任务容器
+							var element = dc("li"),
+								checkbox = dc("input"),
+								p = dc("p"),
+								a = dc("a"),
+								_this = this;
+							// 设置对父级对象的引用
+							this.parentObject = parentObject;
+							this.key = key;
+							this.isDone = 0;
+							// 设置选框属性
+							checkbox.type = "checkbox";
+							checkbox.onchange = function(){
+								_this.isDone ^= 1;
+								_this.parentObject.subscriber.update(_this.parentObject.arrTasks);
+								p.className = ["", "checked"][+this.checked];
+								[
+									// 全部选项的数据更新
+									function(){},
+									// 已完成选项的数据更新
+									function(){
+										parentObject.update(parentObject.arrTasks.filter(function(item){
+											return !item.isDone;
+										}));
+									},
+									// 未完成选项的数据更新
+									function(){
+										parentObject.update(parentObject.arrTasks.filter(function(item){
+											return item.isDone;
+										}));
+									}
+								][parentObject.status]();
+							};
+							p.innerText = text;
+							// 设置删除按钮属性
+							a.innerText = "×";
+							a.onclick = function(){
+								_this.removeTask(element);
+							};
+							// 添加所有子级元素至当前任务容器
+							element.appendChild(checkbox);
+							element.appendChild(p);
+							element.appendChild(a);
+							// 开放选框属性方便外部使用
+							this.checkbox = checkbox;
+							this.element = element;
+						}
+						// 删除本条任务
+						Task.prototype.removeTask = function(){
+							var arrTasks = this.parentObject.arrTasks;
+							arrTasks.splice(this.key, 1);
+							this.parentObject.subscriber.update(arrTasks);
+							this.parentObject.element.removeChild(this.element);
+						};
+						// 开放为任务属性方便外部使用
+						this.Task = Task;
+					},
+					// 底部状态栏
+					StatusBar : function(oTasks){
+						var element = dc("div"),
+							rest = dc("span"),
+							arrButtons = [
+								{
+									text : "全部",
+									click : function(){
+										oTasks.update(oTasks.arrTasks);
+									}
+								},
+								{
+									text : "未完成",
+									click : function(){
+										oTasks.update(oTasks.arrTasks.filter(function(item){
+											return !item.isDone;
+										}));
+									}
+								},
+								{
+									text : "已完成",
+									click : function(){
+										oTasks.update(oTasks.arrTasks.filter(function(item){
+											return item.isDone;
+										}));
+									}
+								}
+							].map(function(item, index){
+								return new Button(item, index);
+							}),
+							clear = dc("b"),
+							index = 0;
+						// 状态切换按钮类
+						function Button(option, key){
+							var element = dc("a"),
+								_this = this;
+							element.innerText = option.text;
+							this.key = key;
+							element.onclick = function(e){
+								_this._click(this);
+								option.click(e/*保证外部的点击事件处理方法能够获取到当前标签的事件对象*/);
+							};
+							this.element = element;
+						}
+						// 设置默认点击事件
+						Button.prototype._click = function(element){
+							arrButtons[index].element.className = "";
+							index = this.key;
+							element.className = "current";
+							oTasks.status = index;
+						};
+						element.className = "statusBar";
+						rest.innerText = "还剩 0 条未完成任务";
+						// 清空按钮的属性
+						clear.innerText = "清空已完成任务";
+						clear.onclick = function(){
+							oTasks.update(oTasks.arrTasks.filter(function(item){
+								return !item.isDone;
+							}), 1);
+						};
+						// 添加所有子级元素至当前状态栏容器
+						element.appendChild(rest);
+						arrButtons[0].element.click();
+						arrButtons.forEach(function(item){
+							element.appendChild(item.element);
+						});
+						element.appendChild(clear);
+						this.rest = rest;
+						this.element = element;
+						// 订阅任务栏，任务栏会保证将每次更新的数据告知状态栏
+						this.subscribe(oTasks);
+					},
+					// 初始化
+					init : function(){
+						// 创建TodoList的容器
+						var element = dc("div");
+						element.className = "todoList";
+						// 设置TodoList的属性方便内部调用
+						this.tasks = new this.Tasks;
+						this.inputBar = new this.InputBar(this.tasks);
+						this.statusBar = new this.StatusBar(this.tasks);
+						// 添加所有子级元素至当前TodoList容器
+						element.appendChild(this.inputBar.element);
+						element.appendChild(this.tasks.element);
+						element.appendChild(this.statusBar.element);
+						document.body.appendChild(element);
+					}
+				};
+				// 任务列表的添加一条任务方法
+				TodoList.Tasks.prototype.appendTask = function(text, callback){
+					// 此方法内的this指向原型链所在的TodoList.Tasks类
+					var task = new this.Task(this, this.arrTasks.length, text);
+					this.appendTaskToList(task);
+					this.arrTasks.push(task);
+					// 分发给状态栏最新的任务数据集
+					this.dispatch(this.arrTasks);
+					callback(); // 保证任务列表添加好了一个新任务后再执行此清空方法
+				};
+				// 向任务栏容器中添加子任务的标签元素
+				TodoList.Tasks.prototype.appendTaskToList = function(task){
+					this.element.insertBefore(task.element, this.element.childNodes[0]);
+				};
+				// 任务列表的全选方法
+				TodoList.Tasks.prototype.checkAll = function(checked){
+					this.arrTasks.forEach(function(item){
+						var checkbox = item.checkbox;
+						// 全部勾选
+						checked && checkbox.checked || checkbox.click();
+						// 全部清空
+						checked || checkbox.checked && checkbox.click();
+					});
+				};
+				// 任务栏分发给状态栏最新的任务数据
+				TodoList.Tasks.prototype.dispatch = function(arrTasks){
+					this.subscriber.update(arrTasks);
+				};
+				// 根据外部处理方法处理后的新数据更新任务栏
+				TodoList.Tasks.prototype.update = function(arrTasks, isDeep){
+					var _this = this;
+					this.element.innerText = " ";
+					arrTasks.forEach(function(item){
+						_this.appendTaskToList(item);
+					});
+					if(isDeep){
+						this.arrTasks = arrTasks;
+					}
+				};
+				// 状态栏订阅任务栏对象
+				TodoList.StatusBar.prototype.subscribe = function(obj){
+					obj.subscriber = this;
+				};
+				// 更新任务条数的显示
+				TodoList.StatusBar.prototype.update = function(arrTasks){
+					this.rest.innerText = ["还剩 ", arrTasks.filter(function(item){
+						return !item.isDone;
+					}).length, " 条未完成任务"].join("");
+				};
+				// 执行初始化TodoList
+				TodoList.init();
+			})();
+		</script>
+	</body>
+</html>
